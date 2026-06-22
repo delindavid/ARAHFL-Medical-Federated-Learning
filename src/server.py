@@ -2,55 +2,84 @@ import torch
 
 
 class Server:
+
     def __init__(self, global_model, reliability_tracker=None):
+
         self.global_model = global_model
+
         self.reliability_tracker = reliability_tracker
 
         self.client_updates = []
+
         self.client_ids = []
 
+        # Day 11 additions
+        self.reliability_history = []
+
+        self.weight_history = []
+
+        self.global_accuracy_history = []
+
     # -------------------------
-    # Receive client updates
+    # Receive Client Update
     # -------------------------
     def add_client_update(self, client_id, weights):
+
         self.client_ids.append(client_id)
+
         self.client_updates.append(weights)
 
     # -------------------------
-    # Reliability-Aware Aggregation (ARAHFL)
+    # Reliability-Aware Aggregation
     # -------------------------
     def aggregate(self):
 
         if len(self.client_updates) == 0:
             return None
 
-        # Get reliability weights
         reliability_weights = []
 
         for cid in self.client_ids:
+
             if self.reliability_tracker:
-                w = self.reliability_tracker.get_client_reliability(cid)
+
+                weight = self.reliability_tracker.get_client_reliability(
+                    cid
+                )
+
             else:
-                w = 1.0
 
-            reliability_weights.append(w)
+                weight = 1.0
 
-        # Normalize weights
+            reliability_weights.append(weight)
+
+        # Save reliability history
+        self.reliability_history.append(
+            reliability_weights.copy()
+        )
+
         total_weight = sum(reliability_weights)
+
+        if total_weight == 0:
+            total_weight = 1.0
 
         reliability_weights = [
             w / total_weight
             for w in reliability_weights
         ]
 
+        # Save aggregation weights
+        self.weight_history.append(
+            reliability_weights.copy()
+        )
+
         new_weights = {}
 
-        # Aggregate each parameter
         for key in self.client_updates[0].keys():
 
             first_tensor = self.client_updates[0][key]
 
-            # Handle integer tensors separately
+            # Integer tensors
             if first_tensor.dtype in (
                 torch.int64,
                 torch.int32,
@@ -66,7 +95,10 @@ class Server:
                     dtype=torch.float32
                 )
 
-                for i, client_state in enumerate(self.client_updates):
+                for i, client_state in enumerate(
+                    self.client_updates
+                ):
+
                     aggregated += (
                         client_state[key].float()
                         * reliability_weights[i]
@@ -74,23 +106,52 @@ class Server:
 
                 new_weights[key] = aggregated
 
-        # Update global model
-        self.global_model.load_state_dict(new_weights)
+        self.global_model.load_state_dict(
+            new_weights
+        )
 
-        # Clear buffers
         self.client_updates = []
+
         self.client_ids = []
 
         return self.global_model.state_dict()
 
     # -------------------------
-    # Get global model
+    # Log Global Accuracy
     # -------------------------
-    def get_global_model(self):
-        return self.global_model.state_dict()
+    def log_global_accuracy(
+        self,
+        accuracy
+    ):
+
+        self.global_accuracy_history.append(
+            accuracy
+        )
 
     # -------------------------
-    # Set global model
+    # Accessors
     # -------------------------
-    def set_global_model(self, weights):
-        self.global_model.load_state_dict(weights)
+    def get_global_model(self):
+
+        return self.global_model.state_dict()
+
+    def set_global_model(
+        self,
+        weights
+    ):
+
+        self.global_model.load_state_dict(
+            weights
+        )
+
+    def get_reliability_history(self):
+
+        return self.reliability_history
+
+    def get_weight_history(self):
+
+        return self.weight_history
+
+    def get_accuracy_history(self):
+
+        return self.global_accuracy_history

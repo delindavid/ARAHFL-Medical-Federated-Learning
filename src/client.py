@@ -7,7 +7,6 @@ class Client:
     def __init__(self, model, train_loader, device=None):
 
         self.model = model
-
         self.train_loader = train_loader
 
         self.device = device if device else (
@@ -24,14 +23,11 @@ class Client:
         )
 
     # -------------------------
-    # MixUp Augmentation
+    # MixUp
     # -------------------------
     def mixup_data(self, x, y, alpha=0.4):
 
-        if alpha > 0:
-            lam = np.random.beta(alpha, alpha)
-        else:
-            lam = 1
+        lam = np.random.beta(alpha, alpha) if alpha > 0 else 1
 
         batch_size = x.size(0)
 
@@ -58,7 +54,16 @@ class Client:
         return torch.mean((pred1 - pred2) ** 2)
 
     # -------------------------
-    # Local Training
+    # Reliability Score
+    # -------------------------
+    def compute_reliability(self, avg_loss):
+
+        reliability = 1.0 / (1.0 + avg_loss)
+
+        return float(reliability)
+
+    # -------------------------
+    # Training
     # -------------------------
     def train(self, epochs=1):
 
@@ -72,7 +77,6 @@ class Client:
 
                 data = data.to(self.device)
 
-                # PathMNIST labels come as [batch_size,1]
                 target = target.squeeze().long().to(self.device)
 
                 mixed_x, y_a, y_b, lam = self.mixup_data(
@@ -101,7 +105,9 @@ class Client:
 
         avg_loss = total_loss / len(self.train_loader)
 
-        return avg_loss
+        reliability = self.compute_reliability(avg_loss)
+
+        return avg_loss, reliability
 
     # -------------------------
     # Get Weights
